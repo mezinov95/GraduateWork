@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<BorlandProject>
+	<Transactions>
+    <Transaction>2016.03.02 13:52:24.140.cpp,C:\Documents and Settings\User\Мои документы\Borland Studio Projects\Unit2.cpp=D:\Mezinov\Примеры интерфейсного приложения\Вывод в Memo\Unit2.cpp</Transaction>
+    <Transaction>2016.03.02 13:52:24.156.h,C:\Documents and Settings\User\Мои документы\Borland Studio Projects\Unit2.h=D:\Mezinov\Примеры интерфейсного приложения\Вывод в Memo\Unit2.h</Transaction>
+    <Transaction>2016.03.02 13:52:24.156.dfm,C:\Documents and Settings\User\Мои документы\Borland Studio Projects\Unit2.dfm=D:\Mezinov\Примеры интерфейсного приложения\Вывод в Memo\Unit2.dfm</Transaction>
+    <Transaction>2016.03.02 13:52:24.921.bdsproj,C:\Documents and Settings\User\Мои документы\Borland Studio Projects\Project1.bdsproj=D:\Mezinov\Примеры интерфейсного приложения\Вывод в Memo\Project1.bdsproj</Transaction>
+    <Transaction>2016.05.25 11:42:34.453.cpp,D:\Mezinov\___Programm(25.05.2016)\Unit3.cpp=D:\Mezinov\___Programm(25.05.2016)\Help.cpp</Transaction>
+    <Transaction>2016.05.25 11:42:34.468.h,D:\Mezinov\___Programm(25.05.2016)\Unit3.h=D:\Mezinov\___Programm(25.05.2016)\Help.h</Transaction>
+    <Transaction>2016.05.25 11:42:34.468.dfm,D:\Mezinov\___Programm(25.05.2016)\Unit3.dfm=D:\Mezinov\___Programm(25.05.2016)\Help.dfm</Transaction>
+  </Transactions>
+</BorlandProject>

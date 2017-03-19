@@ -1,0 +1,1371 @@
+//---------------------------------------------------------------------------
+#include <vcl.h>
+#pragma hdrstop
+#include <io.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <string.h>
+#include <dos.h>
+#include <conio.h>
+#include <math.h>
+#include <iostream.h>
+#include <fstream.h>
+#include <dir.h>
+
+#include "StructNvd.h"
+#include "StructDcr.h"
+#include "NVDGraph.h" //Описание класса TNVDGraph для графика
+#include "Help.h"  // Форма "Справка"
+
+void ShowStatistics(); // прототип функции
+
+enum event_type {EVENT60C, TELESCOPIC, PMT};
+
+
+HEADER_REC header_rec; //Заголовок записи
+SCONFIG_DAT Config_Dat; //Конфигурация
+SMONIT_DAT Monit_Dat;  //данные мониторирования для записи
+SEVENTBEK_DAT Event_Dat; //Данные события
+
+
+SMonADC MonPds[32]; //Результаты мониторинга пьедесталов БЭК
+SMonADC MonPdsL[32]; //Результаты мониторинга пьедесталов БЭК в режиме нулевой подсветки
+SMonADC MonAmpL[32]; //Результаты мониторинга подсветки БЭК
+SMonShumTV MonShumTV[32]; //Результаты мониторинга шумов ФЭУ, температуры и напряжений БЭК
+SMonBek MonBek[32]; //Результаты мониторинга БЭКов
+SEvtBek EventBek[32]; //Комбинированные данные одного события от БЭК
+
+SMonADC_SCT MonPds_SCT[2]; //Результаты мониторинга пьедесталов БЭП
+SMonBep MonBep[2]; //Результаты мониторинга БЭПов
+SMonShumTV_SCT MonShumTV_SCT[2]; //Результаты мониторинга шумов ФЭУ, температуры и напряжений БЭП
+SEvtBep EventBep[2]; //Комбинированные данные одного события от БЭП
+
+// ДEКОР
+// Заполнение массивов N8,N16,N64,Nread при получении конфигурации
+struct CNF_SET CNF_S;  //Необходимо для распаковки событий ДЕКОРа
+struct STR_DECOR *DcrF=NULL;
+short id_eventDCR=0; //Признак того, что были получены данные события от ДЕКОР
+
+//-------- Добавления в запись EDAT -----------
+unsigned char Lenadd[2]; // Lenadd[0] кол-во слов в bufadd для записи
+			 // Lenadd[1] - 0 данных от ДЕКОРа нет, 1-есть.
+unsigned short Bufadd[20];
+
+//---------------------------------------------------------------------------
+char bstop[4]; //конец записи
+char DirRead[256]; //Директория рана
+char NameFileSearch[256]; //Маска файлов
+char NameFileRead[256]; //Имя текущего читаемого файла
+char DirResult[256]; //Директория результатов
+int measurement = 0; // порядковый номер измерения
+
+short strqsm[32]={4,4,4,4,3,3,3,4,4,4,4,3,3,3,4,4,4,4,3,3,3,4,4,4,4,0,0,0,0,0,0,0};
+
+#define MAXCHAN 1 //Максимальное количество отображаемых каналов
+TNVDGraph *Graph1 = NULL;
+TNVDGraph *Graph2 = NULL;
+TNVDGraph *Graph3 = NULL;
+TNVDGraph *Graph4 = NULL;
+TNVDGraph *Graph5 = NULL;  // Гистограмма коэффициентов сшивки
+TNVDGraph *Graph6 = NULL;
+TNVDGraph *Graph7 = NULL;
+TNVDGraph *Graph8 = NULL;
+TNVDGraph *Graph9 = NULL;
+TNVDGraph *Graph10 = NULL;    // Распределение по суммарной амплитуде в "60С"
+TNVDGraph *Graph11 = NULL;  // Шумы ФЭУ
+TNVDGraph *Graph12 = NULL;  // Шумы триггерных сигналов
+TNVDGraph *Graph13 = NULL;   // Отклик ФЭУ при срабатывании телескопа
+TNVDGraph *Graph14 = NULL;
+
+unsigned long TmpNpoint[MAXCHAN];  // для гистограмм
+unsigned long TmpNpoint2[MAXCHAN];  // для графиков
+
+long DATA1[MAXCHAN][4096];
+long DATA2[MAXCHAN][4096];
+long DATA3[MAXCHAN][4096];
+long DATA4[MAXCHAN][4096];
+long DATA5[MAXCHAN][4096];
+long DATA6[MAXCHAN][4096];
+long DATA7[MAXCHAN][4096];
+long DATA8[MAXCHAN][4096];
+long DATA9[MAXCHAN][4096];
+long DATA10[MAXCHAN][4096];  // Распределение ФЭУ по амплитуде
+long DATA11[MAXCHAN][4096];
+long DATA12A[MAXCHAN][4096];  // Шумы триггерного сигнала А
+long DATA12B[MAXCHAN][4096];   // Шумы триггерного сигнала B
+long DATA12C[MAXCHAN][4096];    // Шумы триггерного сигнала С
+long DATA13[MAXCHAN][4096];  // Отклик ФЭУ при срабатывании телескопа
+long DATA14LK[MAXCHAN][4096];  // Коэффициент сшивки. Зависимость от времени
+long DATA14Amp9[MAXCHAN][4096];
+long DATA14Pds9[MAXCHAN][4096];
+long DATA14Amp12[MAXCHAN][4096];
+long DATA14Pds12[MAXCHAN][4096];
+long DATA14Noise[MAXCHAN][4096];
+long DATA14NoiseA[MAXCHAN][4096];
+long DATA14NoiseB[MAXCHAN][4096];
+long DATA14NoiseC[MAXCHAN][4096];
+ofstream events60C;
+ofstream BarGraphSave; // Файл,в который будет записываться текущая гистограмма и все параметры при закрытии программы
+ifstream BarGraphOpen; // Файл, из которого будет считываться гистограмма
+
+#include "Unit2.h"
+//---------------------------------------------------------------------------
+#pragma package(smart_init)
+#pragma resource "*.dfm"
+
+void ReadBargraph() // Считывание гистограммы из файла
+{
+	if (!access("D:\\Mezinov\\BarGraph\\bargraph.txt",0))  // Если файл существуют
+	{
+		BarGraphOpen.open("D:\\Mezinov\\BarGraph\\bargraph.txt",ios::in);
+		char buff[256]; // хранит промежуточное считываемое значение
+		int buff_int = 0;
+
+		BarGraphOpen >> buff;  // Считываем название гистограммы
+		Graph1->Caption = buff;  // Устанавливаем название гистограммы
+
+		BarGraphOpen >> buff;  // Считываем название оси X
+		Graph1->LabelX = buff;
+
+		BarGraphOpen >> buff;  // Считываем название оси Y
+		Graph1->LabelY = buff;
+
+		BarGraphOpen >> buff;  // Считываем X_min
+		Graph1->XminAll = buff_int;
+
+		BarGraphOpen >> buff;  // Считываем X_max
+		Graph1->XmaxAll = buff_int;
+
+		for (int i = 0; i < 4096; i++)
+		{
+			BarGraphOpen >> buff;
+			DATA1[0][i] = StrToInt(buff);
+		}
+		BarGraphOpen.close();
+	}
+}
+
+void SetHistogramProperties(TNVDGraph* histogram)
+{
+	histogram->Align=alClient;
+	histogram->Type=gtHistogram;
+	histogram->ColorBk=clGreen;
+	histogram->Kind=pgBar;
+	histogram->Maska=0;//битовая маска рисуемых буферов
+	histogram->TypeBufX=tbUChar;
+	histogram->SetBufX(NULL,NULL,0);
+	histogram->TypeBufY[0]=tbLong;
+	TmpNpoint[0]=4096; // Первоначальное максимальное значение по оси х
+	histogram->SetNPoint(&(TmpNpoint[0]),0);
+	histogram->NBuf=1;
+	histogram->AvtoScale=true;
+	histogram->AvtoScaleX=true;
+	histogram->AvtoScaleY=true;
+	histogram->XminAll=0;
+	histogram->XmaxAll=TmpNpoint[0];
+	histogram->YminAll=0;
+	histogram->YmaxAll=4096;  // Первоначальное максимальное значение по оси y
+	histogram->Maska=1;
+}
+
+
+void SetGraphProperties(TNVDGraph* graph)
+{
+	graph->Align=alClient;
+	graph->Type=gtHistogram;
+	graph->ColorBk=clGreen;
+	graph->Kind=pgCombo;
+	graph->Maska=0;//битовая маска рисуемых буферов
+	graph->TypeBufX=tbUChar;
+	graph->SetBufX(NULL,NULL,0);
+	graph->TypeBufY[0]=tbLong;
+	TmpNpoint2[0]= 3600; // Первоначальное максимальное значение по оси х
+	graph->SetNPoint(&(TmpNpoint2[0]),0);
+	graph->NBuf=1;
+	graph->AvtoScale = true;
+	graph->AvtoScaleX = true;
+	graph->AvtoScaleY = false;
+	graph->XminAll=0;
+	graph->XmaxAll=TmpNpoint2[0];
+	graph->YminAll = 1000;
+	graph->YmaxAll = 1100;  // Первоначальное максимальное значение по оси y
+	graph->Maska=1;
+}
+
+
+
+TForm1 *Form1;
+//---------------------------------------------------------------------------
+__fastcall TForm1::TForm1(TComponent* Owner)
+	: TForm(Owner)   // Запускается при открытии приложения
+{
+	//ReadBargraph(); // Считывание гистограммы из файла
+	Graph1 = new TNVDGraph(GroupBox1);
+	Graph1->Name="Graph1";
+	Graph1->Parent=GroupBox1;
+	Graph1->Caption="";
+	Graph1->SetBufY(DATA1[0],NULL,0);
+    Graph1->LabelY="N";
+	Graph1->LabelX="N_Lam";
+	SetHistogramProperties(Graph1);
+	//ReadBargraph(); // Считывание гистограммы из файла
+	//ShowStatistics();  // Вывод статистики по старой гистограмме
+
+	Graph2 = new TNVDGraph(GroupBox3);
+	Graph2->Name="Graph2";
+	Graph2->Parent=GroupBox3;
+	Graph2->Caption="";
+	Graph2->SetBufY(DATA2[0],NULL,0);
+    Graph2->LabelY="N";
+	Graph2->LabelX="N_Pmt";
+	SetHistogramProperties(Graph2);
+
+	Graph3 = new TNVDGraph(GroupBox4);
+	Graph3->Name="Graph3";
+	Graph3->Parent=GroupBox4;
+	Graph3->Caption="";
+	Graph3->LabelY="N";
+	Graph3->LabelX="Амплитуда счётчика СКТ";
+	Graph3->SetBufY(DATA3[0],NULL,0);
+	SetHistogramProperties(Graph3);
+
+	Graph4 = new TNVDGraph(GroupBox5);
+	Graph4->Name="Graph4";
+	Graph4->Parent=GroupBox5;
+	Graph4->Caption="";
+	Graph4->SetBufY(DATA4[0],NULL,0);
+	Graph4->LabelY="N";
+	Graph4->LabelX="Амплитуда счётчика СКТ";
+	SetHistogramProperties(Graph4);
+
+	Graph5 = new TNVDGraph(GroupBox7);
+	Graph5->Name="Graph5";
+	Graph5->Parent=GroupBox7;
+	Graph5->Caption="";
+	Graph5->SetBufY(DATA5[0],NULL,0);
+	Graph5->LabelY="N";
+	Graph5->LabelX="Коэффициент сшивки *0.1";
+	SetHistogramProperties(Graph5);
+
+	Graph6 = new TNVDGraph(GroupBox8);
+	Graph6->Name="Graph6";
+	Graph6->Parent=GroupBox8;
+	Graph6->Caption="";
+	Graph6->SetBufY(DATA6[0],NULL,0);
+	Graph6->LabelY="N";
+	Graph6->LabelX="Пьедестал на 12-м диноде *0.1";
+	SetHistogramProperties(Graph6);
+
+	Graph7 = new TNVDGraph(GroupBox9);
+	Graph7->Name="Graph7";
+	Graph7->Parent=GroupBox9;
+	Graph7->Caption="";
+	Graph7->SetBufY(DATA7[0],NULL,0);
+	Graph7->LabelY="N";
+	Graph7->LabelX="Амплитуда на 12-м диноде";
+	SetHistogramProperties(Graph7);
+
+	Graph8 = new TNVDGraph(GroupBox10);
+	Graph8->Name="Graph8";
+	Graph8->Parent=GroupBox10;
+	Graph8->Caption="";
+	Graph8->SetBufY(DATA8[0],NULL,0);
+	Graph8->LabelY="N";
+	Graph8->LabelX="Пьедестал на 9-м диноде *0.1";
+	SetHistogramProperties(Graph8);
+
+	Graph9 = new TNVDGraph(GroupBox11);
+	Graph9->Name="Graph9";
+	Graph9->Parent=GroupBox11;
+	Graph9->Caption="";
+	Graph9->SetBufY(DATA9[0],NULL,0);
+	Graph9->LabelY="N";
+	Graph9->LabelX="Амлитуда на 9-м диноде *0.1";
+	SetHistogramProperties(Graph9);
+
+	Graph10 = new TNVDGraph(GroupBox12);
+	Graph10->Name="Graph10";
+	Graph10->Parent=GroupBox12;
+	Graph10->Caption="";
+	Graph10->SetBufY(DATA10[0],NULL,0);
+	Graph10->LabelY="N";
+	Graph10->LabelX="Суммарная амплитуда *100";
+	SetHistogramProperties(Graph10);
+
+	Graph11 = new TNVDGraph(GroupBox13);
+	Graph11->Name="Graph11";
+	Graph11->Parent=GroupBox13;
+	Graph11->Caption="";
+	Graph11->SetBufY(DATA11[0],NULL,0);
+	Graph11->LabelY="N";
+	Graph11->LabelX="Шумы ФЭУ (Гц)";
+	SetHistogramProperties(Graph11);
+
+	Graph12 = new TNVDGraph(GroupBox15);
+	Graph12->Name="Graph12";
+	Graph12->Parent=GroupBox15;
+	Graph12->Caption="";
+	Graph12->SetBufY(DATA12A[0],NULL,0);
+	Graph12->LabelY="N";
+	Graph12->LabelX="Шум триггерного сигнала А";
+	SetHistogramProperties(Graph12);
+
+	Graph13 = new TNVDGraph(GroupBox17);
+	Graph13->Name="Graph13";
+	Graph13->Parent=GroupBox17;
+	Graph13->Caption="";
+	Graph13->SetBufY(DATA13[0],NULL,0);
+	Graph13->LabelY="N";
+	Graph13->LabelX="Амплитуда ФЭУ (12-й динод)";
+	SetHistogramProperties(Graph13);
+
+	Graph14 = new TNVDGraph(GroupBox18);
+	Graph14->Name = "Graph14";
+	Graph14->Parent = GroupBox18;
+	Graph14->Caption = "";
+	Graph14->SetBufY(DATA14LK[0],NULL,0);
+	Graph14->LabelY = "*0.1";
+	Graph14->LabelX = "Measurement";
+	SetGraphProperties(Graph14);
+	Graph14->YminAll = 1010;
+	Graph14->YmaxAll = 1050;
+
+}
+
+
+bool CheckMessageQueue()
+{
+	MSG msg;
+	while(PeekMessage( &msg, NULL, 0, 0, PM_REMOVE ))
+	{
+		if( msg.message == WM_QUIT ) return FALSE;
+		else
+		{
+			TranslateMessage( &msg );
+			DispatchMessage( &msg );
+		}
+	}
+	return TRUE;
+}
+
+double Round(double Number, short Precision)  // Функция для округления с заданной точностью
+{
+	unsigned short n = pow(10, Precision);
+	Number *= n;
+	if ((Number - (int)Number) >= 0.5)
+	{
+		Number++;
+	}
+	Number = (int)Number;
+	Number /= n;
+	return Number;
+}
+
+void ShowStatistics(long DATA[MAXCHAN][4096], TMemo *memo, int multiplier)
+{
+	double summ1 = 0;  // Общее количество значений в выборке. Промежуточная переменная для подсчёта среднего и дисперсии
+	double summ2 = 0;   // Промежуточная переменная для подсчёта среднего и дисперсии
+	double average_value = 0.0;
+	memo->Clear();
+	// Считаем среднее значение
+	for (int i = 0; i < 4096; i++)
+	{
+		if (DATA[0][i] != 0)
+		{
+			summ1 = summ1 + DATA[0][i];
+			summ2 = summ2 + DATA[0][i] * i;
+			average_value = (double)summ2 / summ1;
+			average_value = Round(average_value, 2);
+		}
+	}
+	if (multiplier == 1)
+	{
+		average_value = average_value / 10;
+		memo->Lines->Add("Среднее значение: " + FloatToStr(average_value));
+		average_value = average_value * 10;
+	}
+	else if (multiplier == 100)
+	{
+		average_value = average_value * 100;
+		memo->Lines->Add("Среднее значение: " + FloatToStr(average_value));
+		average_value = average_value / 100;
+	}
+	else
+	{
+		memo->Lines->Add("Среднее значение: " + FloatToStr(average_value));
+	}
+	// Считаем дисперсию
+	summ1 = summ2 = 0.001;
+	double dispersion = 0.0;
+	for (int i = 0; i < 4096; i++)
+	{
+		if (DATA[0][i] != 0)
+		{
+			summ2 = summ2 + (i - average_value)*(i - average_value) * DATA[0][i] ;
+			summ1 = summ1 + DATA[0][i];
+			dispersion = (double)summ2 / (summ1 - 1);
+			dispersion = Round(dispersion, 2);
+		}
+	}
+	if (multiplier == 1)
+	{
+		dispersion = dispersion / 10;
+		memo->Lines->Add("Дисперсия: " + FloatToStr(dispersion));
+	}
+	else if (multiplier == 100)
+	{
+		dispersion = dispersion * 100;
+		memo->Lines->Add("Дисперсия: " + FloatToStr(dispersion));
+	}
+	else
+	{
+		memo->Lines->Add("Дисперсия: " + FloatToStr(dispersion));
+	}
+	// Считаем среднеквадратичное отколнение (сигма)
+	double sigma = sqrt(dispersion);
+	sigma = Round(sigma, 2);
+	memo->Lines->Add("Среднеквадратичное отклонение: " + FloatToStr(sigma));
+}
+
+
+void Events60C()  // Задание 9
+{
+	if (Event_Dat.trgnvd & 1)  // Если данное событие - событие 60С
+	{
+		double total_amp = 0.0;  // суммарная амплитуда
+		short Npmt  = 0;  // число сработавших ФЭУ
+		short Nlam  = Event_Dat.Nlam;  // число сработавших КСМ
+		for(int bec=0;bec < 25;bec++)
+		{
+			for(int qsm=0;qsm<strqsm[bec];qsm++)
+			{
+				for(int pmt=0;pmt<6;pmt++)
+				{
+					//если ФЭУ сработал
+					if((EventBek[bec].maskahit[qsm]&(1<<pmt))!=0)
+					{
+						Npmt++;
+						double dyn12=EventBek[bec].acp[qsm][pmt][0] - MonPds[bec].	sred[qsm][pmt][0];
+						double dyn9=EventBek[bec].acp[qsm][pmt][1] - MonPds[bec].	sred[qsm][pmt][1];
+						total_amp += dyn12;
+					}
+				}
+			}
+		}
+		total_amp = Round(total_amp,2);
+		DATA1[0][Nlam]++;  // Увеличиваем элемент гистограммы
+		DATA2[0][Npmt]++;  // Увеличиваем элемент гистограммы
+		int total = (int)total_amp / 100;
+		DATA10[0][total]++;  // Увеличиваем элемент гистограммы
+		Graph1->Repaint();
+		Graph2->Repaint();
+		Graph10->Repaint();
+
+		Form1->Memo1->Lines->Add(IntToStr(Event_Dat.Nrun) + "\t" + IntToStr(Event_Dat.exp_count) + "\t" + IntToStr(Nlam) + "\t" + IntToStr(Npmt) + "\t" + FloatToStr(total_amp));
+		ShowStatistics(DATA1, Form1->StatisticsMemo,0);
+		ShowStatistics(DATA2, Form1->Memo9,0);
+		ShowStatistics(DATA10, Form1->Memo15,100);
+		if (Form1->CheckBox1->Checked == true)
+		{
+			events60C << Event_Dat.Nrun << "\t"<< Event_Dat.exp_count << "\t" << Nlam << "\t" << Npmt << "\t" << total_amp << "\n";
+		}
+	}
+}
+
+void TelescopicEvent(short plane, short struna) // Статистика для счётчиков СКТ сработавших телескопах, которые находятся друг под другом(задание 10)
+{
+	if (Event_Dat.trgnvd & (1 << 10))   // Если сработали обе плоскости
+	{
+		short Nlam_SCT = Event_Dat.NlamSKT; // Количество сработавших счетчиков СКТ
+		if (Nlam_SCT == 2)
+		{
+			float ampSCT0 = 0.0; // Амплитуда сработавшего в нижней плоскости счетчика СКТ
+			float ampSCT1 = 0.0; // Амплитуда сработавшего в верхней плоскости счетчика СКТ
+			short pl0, pl1; // номера плоскостей счетчиков, сработавших в нижней и верхней плоскостях  соответсвенно
+			short str0, str1; // номера струн счётчиков, сработавших в нижней и верхней плоскостях соответсвенно
+			for (int maa = 0; maa < 8; maa++) // Пройдемся по нижнему БЭПу ([0])
+			{
+				for (int pmt=0; pmt < 5; pmt++)
+				{
+					if(((EventBep[0].maskahit[maa])&(1<<pmt))!=0) //  Если нашли какой-то сработавший счётчик в нижней плоскости
+					{
+						pl0 = Config_Dat.CfgBep[0].CfgKSM[maa].ipl[pmt]; // номер плоскости счетчика, сработавшего в нижней плоскости
+						str0 = Config_Dat.CfgBep[0].CfgKSM[maa].istr[pmt]; // номер струны сработавшего в нижней плоскости счётчика
+						ampSCT0 = EventBep[0].acp[maa][pmt] - MonPds_SCT[0].sred[maa][pmt];
+					}
+				}
+			}
+			for (int maa = 0; maa < 8; maa++) // Пройдёмся по верхнему БЭПу ([1])
+			{
+				for (int pmt=0; pmt < 5; pmt++)
+				{
+					if(((EventBep[1].maskahit[maa])&(1<<pmt))!=0) //  Если нашли какой-то сработавший счётчик в нижней плоскости
+					{
+						pl1 = Config_Dat.CfgBep[1].CfgKSM[maa].ipl[pmt]; // номер плоскости счетчика, сработавшего в верхней плоскости
+						str1 = Config_Dat.CfgBep[1].CfgKSM[maa].istr[pmt]; // номер струны сработавшего в верхней плоскости счётчика
+						ampSCT1 = EventBep[1].acp[maa][pmt] - MonPds_SCT[1].sred[maa][pmt];
+					}
+				}
+			}
+			ampSCT0 = Round(ampSCT0,2);
+			ampSCT1 = Round(ampSCT1,2);
+			if  (plane == pl0 && plane == pl1 && pl0 == pl1 && struna == str0 && struna == str1 && str0==str1) // Если плоскости и струны сработавших счетчиков в верхней и нижней плоскости совпадают с той, что задана в аргументах и совпадают между собой
+			{
+				double amp0 = Round(ampSCT0,2);
+				double amp1 = Round(ampSCT1,2);
+				DATA3[0][(int)amp0]++;
+				Graph3->Repaint();
+				ShowStatistics(DATA3, Form1->Memo10,0);
+				DATA4[0][(int)amp1]++;
+				Graph4->Repaint();
+				ShowStatistics(DATA4, Form1->Memo11,0);
+				Form1->Memo2->Lines->Add(IntToStr(Event_Dat.Nrun) + "\t" + IntToStr(Event_Dat.exp_count) + "\t" + FloatToStr(amp0) + "\t" + FloatToStr(amp1));
+
+                if (Form1->ViewPmtResponse->Checked == true)  // Если надо смотреть отклик ФЭУ совместно с телескопом
+				{
+					int bek = StrToInt(Form1->TelescopicBek->Text) - 1;
+					int qsm = StrToInt(Form1->TelescopicQsm->Text) - 1;
+					int pmt = StrToInt(Form1->TelescopicPmt->Text) - 1;
+					if((EventBek[bek].maskahit[qsm]&(1<<pmt))!=0)  // Если ФЭУ сработал, то нужно вычесть пьедестал
+					{
+						double dyn12 = EventBek[bek].acp[qsm][pmt][0] - MonPds[bek].sred[qsm][pmt][0];
+						DATA13[0][(int)dyn12]++;
+						Graph13->Repaint();
+						ShowStatistics(DATA13,Form1->Memo14,0);
+					}
+					else  // Если ФЭУ не сработал, то не вычетаем пьедестал
+					{
+						double dyn12 = EventBek[bek].acp[qsm][pmt][0];
+						DATA13[0][(int)dyn12]++;
+						Graph13->Repaint();
+						ShowStatistics(DATA13,Form1->Memo14,0);
+					}
+				}
+			}
+		}
+	}
+}
+
+void ReadNad(event_type type)
+{
+	int Nevent=0;
+	int tip_zapDcr=0;
+	strcpy(DirRead, Form1->PathToRun->Text.c_str()); // Пользователь вводит путь к рану на форме
+	strcpy(NameFileSearch,DirRead);
+	strcat(NameFileSearch,"\\*.nad");
+	struct ffblk ffile; // Для поиска файлов
+	strcpy(DirResult,"Result");
+	mkdir(DirResult);
+	// Создаем главную структуру ДЕКОРа
+	if(DcrF==NULL)
+	{
+		DcrF = new STR_DECOR;
+	}
+	memset(DcrF,0,sizeof(STR_DECOR));
+	memset(&MonPds,0,sizeof(MonPds));
+	memset(&MonPdsL,0,sizeof(MonPdsL));
+	memset(&MonAmpL,0,sizeof(MonAmpL));
+	memset(&MonShumTV,0,sizeof(MonShumTV));
+	memset(&MonBek,0,sizeof(MonBek));
+	memset(&MonPds_SCT,0,sizeof(MonPds_SCT));
+	memset(&MonShumTV_SCT,0,sizeof(MonShumTV_SCT));
+	memset(&MonBep,0,sizeof(MonBep));
+
+	//Memo1->Lines->Add("123");
+	int done=findfirst(NameFileSearch,&ffile,FA_ARCH);
+
+	do
+	{
+		strcpy(NameFileRead,DirRead);
+		strcat(NameFileRead,"\\");
+		strcat(NameFileRead,ffile.ff_name);
+		int handle=open(NameFileRead,O_RDONLY|O_BINARY);
+		if(handle==-1)
+		{
+			//printf("\r\n   No open %s",NameFileRead); continue;
+			//getch();
+		}
+		while(read(handle,&header_rec,sizeof(header_rec))==sizeof(header_rec))
+		{
+			if(!CheckMessageQueue())  // Этот IF добавлял я
+			{
+				return;
+			}
+			switch(header_rec.tip_zap)
+			{
+				case HDR_W:
+					tip_zapDcr=header_rec.lendata;
+					{
+						switch(tip_zapDcr)
+						{
+							case ID_CONFIG:
+								read(handle,&DcrF->configcntr,4);
+								read(handle,&DcrF->CNF,sizeof(CONFIG_DECOR));
+								read(handle,DcrF->Trgcnf,2*sizeof(TRGCNF));
+							break;
+							case ID_MONIT:
+								read(handle,&DcrF->configmonit,4);
+								read(handle,&DcrF->CMonitAll,sizeof(CMONITORALL));
+							break;
+							case ID_NOISE:
+								read(handle,DcrF->counter,sizeof(DcrF->counter));
+								read(handle,&DcrF->confignoise,sizeof(DcrF->confignoise));
+								read(handle,DcrF->id_cnoise,sizeof(DcrF->id_cnoise));
+								read(handle,DcrF->len_cnoise,sizeof(DcrF->len_cnoise));
+								read(handle,&DcrF->CNoise,sizeof(DcrF->CNoise));
+								memset(CNF_S.noise_chan,0,sizeof(CNF_S.noise_chan));
+								for(int i=0; i < MAXPM; i++)
+								{
+									if(DcrF->id_cnoise[i]==0)continue;
+									if(DcrF->len_cnoise[i]==0)continue;
+									char *ptr=(char *)DcrF->CNoise[i].noisebuf;
+									int k=0;
+									for(int j=0; j < NCNTR; j++)
+									{
+										if( (DcrF->CNoise[i].maskacntr&(1<<j)) == 0)continue; // нет данных пропустим
+										memcpy(CNF_S.noise_chan[i*NCNTR+j],&ptr[k],8);
+										k +=8;
+									}
+								}
+							 break;
+
+						}
+					}
+				break;
+				case CFGNVD_W:
+					read(handle,&Config_Dat,header_rec.lendata);
+				break;
+				case MONPDS_W:
+					read(handle,&Monit_Dat,header_rec.lendata);
+					{
+						int nbek=0;
+						for(int ibek=0; ibek < 32; ibek++)
+						{
+							if( (Monit_Dat.MaskaBek&(1<<ibek)) ==0)continue;
+							memcpy(&MonPds[ibek],&Monit_Dat.data.MonPds[nbek],sizeof(MonPds[ibek]));
+							nbek++;
+							if(nbek >=Monit_Dat.NBek)break;
+						}
+					}
+				break;
+				case MONPDSL_W:
+					read(handle,&Monit_Dat,header_rec.lendata);
+					{
+						int nbek=0;
+						for(int ibek=0; ibek < 32; ibek++)
+						{
+							if( (Monit_Dat.MaskaBek&(1<<ibek)) ==0)continue;
+							memcpy(&MonPdsL[ibek],&Monit_Dat.data.MonPdsL[nbek],sizeof(MonPdsL[ibek]));
+							nbek++;
+							if(nbek >=Monit_Dat.NBek)break;
+						}
+					}
+				break;
+				case MONAMPL_W:
+					read(handle,&Monit_Dat,header_rec.lendata);
+					{
+						int nbek=0;
+						for(int ibek=0; ibek < 32; ibek++)
+						{
+							if( (Monit_Dat.MaskaBek&(1<<ibek)) == 0)continue;
+							memcpy(&MonAmpL[ibek],&Monit_Dat.data.MonAmpL[nbek],sizeof(MonAmpL[ibek]));
+							nbek++;
+							if(nbek >=Monit_Dat.NBek)break;
+						}
+					}
+					// Всё, что написано ниже в этом case - добавлял я. Считаю коэффициент сшивки для каждого ФЭУ
+					/*if (type == LINKING_COEFFICIENT)
+					{
+						for (int bek = 0; bek < 32; bek++)
+						{
+							for(int qsm=0;qsm<strqsm[bek];qsm++)
+							{
+								for(int pmt=0;pmt<6;pmt++)
+								{
+									float amp12 = MonAmpL[bek].sred[qsm][pmt][0];  // Амплитуда 12-го динода
+									float amp9  = MonAmpL[bek].sred[qsm][pmt][1];  // Амплитуда 9-го динода
+									float pedestal12 = MonPdsL[bek].sred[qsm][pmt][0];
+									float pedestal9 = MonPdsL[bek].sred[qsm][pmt][1];
+									double linking_coefficient = Round((amp12 - pedestal12)/(amp9 - pedestal9),2);
+									//Form1->Memo3->Lines->Add(IntToStr(bek+1) + "\t" + IntToStr(qsm+1) + "\t" + IntToStr(pmt+1) + "\t" + FloatToStr(linking_coefficient));
+									DATA5[0][(int)linking_coefficient]++;
+									Graph5->Repaint();
+								}
+							}
+						}
+						return;
+					}*/
+					if (type == PMT)
+					{
+						int bek = StrToInt(Form1->Bek->Text) - 1;
+						int qsm = StrToInt(Form1->Qsm->Text) - 1;
+						int pmt = StrToInt(Form1->Pmt->Text) - 1;
+						float amp12 = MonAmpL[bek].sred[qsm][pmt][0];  // Амплитуда 12-го динода
+						float amp9  = 10*MonAmpL[bek].sred[qsm][pmt][1];  // Амплитуда 9-го динода
+						float pedestal12 = 10*MonPdsL[bek].sred[qsm][pmt][0];
+						float pedestal9 = 10*MonPdsL[bek].sred[qsm][pmt][1];
+						double linking_coefficient = 10*Round((10*amp12 - pedestal12)/(amp9 - pedestal9),2);
+						DATA5[0][(int)linking_coefficient]++;
+						ShowStatistics(DATA5,Form1->Memo3,1);
+						DATA6[0][(int)pedestal12]++;
+						ShowStatistics(DATA6,Form1->Memo5,1);
+						DATA7[0][(int)amp12]++;
+						ShowStatistics(DATA7,Form1->Memo6,0);
+						DATA8[0][(int)pedestal9]++;
+						ShowStatistics(DATA8,Form1->Memo7,1);
+						DATA9[0][(int)amp9]++;
+						ShowStatistics(DATA9,Form1->Memo8,1);
+						Graph5->Repaint();
+						Graph6->Repaint();
+						Graph7->Repaint();
+						Graph8->Repaint();
+						Graph9->Repaint();
+						DATA14LK[0][measurement] = linking_coefficient;
+						DATA14Amp9[0][measurement] = amp9;
+						DATA14Amp12[0][measurement] = amp12;
+						DATA14Pds9[0][measurement] = pedestal9;
+						DATA14Pds12[0][measurement] = pedestal12;
+						Graph14->Repaint();
+						measurement++;
+					}
+				break;
+				case MONSHUMTV_W:
+					read(handle,&Monit_Dat,header_rec.lendata);
+					{
+						int nbek=0;
+						for(int ibek=0; ibek < 32; ibek++)
+						{
+							if( (Monit_Dat.MaskaBek&(1<<ibek)) ==0)continue;
+							memcpy(&MonShumTV[ibek],&Monit_Dat.data.MonShumTV[nbek],sizeof(MonShumTV[ibek]));
+							nbek++;
+							if(nbek >=Monit_Dat.NBek)break;
+						}
+					}
+                    if (type == PMT)
+					{
+						int bek = StrToInt(Form1->Bek->Text) - 1;
+						int qsm = StrToInt(Form1->Qsm->Text) - 1;
+						int pmt = StrToInt(Form1->Pmt->Text) - 1;
+						float noise = MonShumTV[bek].noisePMT[qsm][pmt] * 1000;
+						DATA11[0][(int)noise]++;
+						ShowStatistics(DATA11,Form1->Memo12, 0);
+						DATA14Noise[0][measurement] = noise;
+						Graph11->Repaint();
+						Graph14->Repaint();
+					}
+				break;
+				case MONBEK_W:
+					read(handle,&Monit_Dat,header_rec.lendata);
+					{
+						int nbek=0;
+						for(int ibek=0; ibek < 32; ibek++)
+						{
+							if( (Monit_Dat.MaskaBek&(1<<ibek)) ==0)continue;
+							memcpy(&MonBek[ibek],&Monit_Dat.data.MonBek[nbek],sizeof(MonBek[ibek]));
+							nbek++;
+							if(nbek >= Monit_Dat.NBek)break;
+						}
+					}
+					if (type == PMT)
+					{
+						int bek = StrToInt(Form1->Bek->Text) - 1;
+						int qsm = StrToInt(Form1->Qsm->Text) - 1;
+						int pmt = StrToInt(Form1->Pmt->Text) - 1;
+						unsigned short noiseA = MonBek[bek].noiseTrA[qsm];
+						unsigned short noiseB = MonBek[bek].noiseTrB[qsm];
+						unsigned short noiseC = MonBek[bek].noiseTrC[qsm];
+						DATA12A[0][noiseA]++;
+						DATA12B[0][noiseB]++;
+						DATA12C[0][noiseC]++;
+						DATA14NoiseA[0][measurement] = noiseA;
+						DATA14NoiseB[0][measurement] = noiseB;
+						DATA14NoiseC[0][measurement] = noiseC;
+						Graph12->Repaint();
+						Graph14->Repaint();
+						if (Form1->RadioButton1->Checked)
+						{
+							ShowStatistics(DATA12A,Form1->Memo13,0);
+						}
+						else if (Form1->RadioButton2->Checked)
+						{
+							ShowStatistics(DATA12B,Form1->Memo13,0);
+						}
+						else if (Form1->RadioButton3->Checked)
+						{
+							ShowStatistics(DATA12C,Form1->Memo13,0);
+						}
+					}
+				break;
+				case MONPDS_SCT_W:
+					read(handle,&Monit_Dat,header_rec.lendata);
+					{
+						int nbep=0;
+						for(int ibep=0; ibep < 2; ibep++)
+						{
+							if( (Monit_Dat.MaskaBek&(1<<ibep)) ==0)continue;
+							memcpy(&MonPds_SCT[ibep],&Monit_Dat.data.MonPds_SCT[nbep],sizeof(MonPds[ibep]));
+							nbep++;
+							if(nbep >=Monit_Dat.NBek)
+							{
+								break;
+							}
+						}
+					}
+				break;
+				case MONSHUMTV_SCT_W:
+					read(handle,&Monit_Dat,header_rec.lendata);
+					{
+						int nbep=0;
+						for(int ibep=0; ibep < 2; ibep++)
+						{
+							if( (Monit_Dat.MaskaBek&(1<<ibep)) ==0)continue;
+							memcpy(&MonShumTV_SCT[ibep],&Monit_Dat.data.MonShumTV_SCT[nbep],sizeof(MonShumTV_SCT[ibep]));
+							nbep++;
+							if(nbep >=Monit_Dat.NBek)
+							{
+								break;
+							}
+						}
+					}
+				break;
+				case MONBEP_W:
+					read(handle,&Monit_Dat,header_rec.lendata);
+					{
+						int nbep=0;
+						for(int ibep=0; ibep < 2; ibep++)
+						{
+							if( (Monit_Dat.MaskaBek&(1<<ibep)) ==0)continue;
+							memcpy(&MonBep[ibep],&Monit_Dat.data.MonBep[nbep],sizeof(MonBep[ibep]));
+							nbep++;
+							if(nbep >=Monit_Dat.NBek)
+							{
+								break;
+							}
+						}
+					}
+				break;
+				case EVENT_W:
+					id_eventDCR=0; // данные события с ДЕКОРа пока не получены
+					memset(&Event_Dat,0,sizeof(Event_Dat));
+					read(handle,&Event_Dat,header_rec.lendata);
+					memset(EventBek,0,sizeof(EventBek));
+					memset(EventBep, 0, sizeof(EventBep));
+
+					if((Event_Dat.NBep) && (Event_Dat.NBek < 32))
+					{
+						//Найдём смещение к данным BEP
+						int lendataBep=Event_Dat.NBep*sizeof(Event_Dat.EventBep[0]);
+						int smes=header_rec.lendata-lendataBep;
+						char *from=((char *)&Event_Dat) + smes;
+						memcpy(Event_Dat.EventBep,from,lendataBep);
+						//На всякий случай очистим хвост у Event_Dat.EventBek
+						int NBek=Event_Dat.NBek;
+						memset(&Event_Dat.EventBek[NBek], 0,(32-NBek)*sizeof(Event_Dat.EventBek[0]));
+					}
+					int nbek=0;
+					for(int ibek=0; ibek < 32; ibek++)
+					{
+						if( (Event_Dat.MaskaBek&(1<<ibek)) ==0)continue;
+						memcpy(&EventBek[ibek],&Event_Dat.EventBek[nbek],sizeof(EventBek[ibek]));
+						nbek++;
+						if(nbek >=Event_Dat.NBek)break;
+					}
+
+					int nbep=0;
+					for(int ibep=0; ibep < 2; ibep++)
+					{
+						if( (Event_Dat.MaskaBep&(1<<ibep)) ==0)continue;
+						memcpy(&EventBep[ibep],&Event_Dat.EventBep[nbep],sizeof(EventBep[ibep]));
+						nbep++;
+						if(nbep >=Event_Dat.NBep)break;
+					}
+					//Дополнения к форматам start5 и start6
+					read(handle,Lenadd,sizeof(Lenadd));
+					if(Lenadd[0]) // кол-во слов в Bufadd для чтения
+					{
+						read(handle,Bufadd,Lenadd[0]*2);
+					}
+					if(Lenadd[1])// 0 данных от ДЕКОРа нет, 1-есть.
+					{
+						read(handle,(char *)&DcrF->configevent,4);
+						read(handle,(char *)&DcrF->len_ceventall,2);
+						if(DcrF->len_ceventall > sizeof(CEVENTALL))break; //return ERR_DCR_W;
+						if(DcrF->len_ceventall)
+						{
+							read(handle,(char *)&DcrF->CEventAll,DcrF->len_ceventall);
+							id_eventDCR=1; // данные события с ДЕКОРа получены
+						}
+
+					}
+					//Обработка события
+					// Обработка события по НЕВОДУ
+					//PmtStatistics(12,0,5); // Информация об одном ФЭУ
+					//PmtStatisticsWithSCT(12,1,1,8,3); // БЭК 13, КСМ 2, ФЭУ 2, Плоскость СКТ 8, Струна 3
+					//LinkingCoefficientForCertainPMT(12,1,1);
+					if (type == EVENT60C)
+					{
+						Events60C();
+					}
+					else if (type == TELESCOPIC)
+					{
+						short plane = StrToInt(Form1->Plane->Text);
+						short struna = StrToInt(Form1->Struna->Text);
+						TelescopicEvent(plane,struna);
+					}
+					//printf("trgnvd: %ld \n",Event_Dat.trgnvd);
+					//if (Event_Dat.trgnvd & 1)   // Если нужно выделить события 60С
+					//{
+					float total_amp = 0.0;  // суммарная амплитуда
+					int n_pmt  = 0;  // число сработавших ФЭУ
+					int n_lam  = 0;  // число сработавших КСМ
+					for(int bec=0;bec < 25;bec++)
+					{
+						for(int qsm=0;qsm<strqsm[bec];qsm++)
+						{
+							if(EventBek[bec].maskahit[qsm])
+							{
+								//printf("%ld \n",EventBek[bec].maskahit[qsm] );
+								n_lam++;
+							}
+							for(int pmt=0;pmt<6;pmt++)
+							{
+								//если ФЭУ сработал
+								if((EventBek[bec].maskahit[qsm]&(1<<pmt))!=0)
+								{
+									n_pmt++;
+									//unsigned long current_event = Event_Dat.exp_count;
+									double dyn12=EventBek[bec].acp[qsm][pmt][0] - MonPds[bec].	sred[qsm][pmt][0];
+									double dyn9=EventBek[bec].acp[qsm][pmt][1] - MonPds[bec].	sred[qsm][pmt][1];
+									/*if((dyn12 > 3500)||(dyn9 > 200)) // Понадобится потом для более правильного подсчёта амплитуды
+									{
+										printf("\n");
+										total_amp += dyn9 * 80;
+									}
+									else*/
+									//{
+									total_amp += dyn12;
+									//}
+									//printf("%ld\t%ld\t%d\t%d\t%d\t%.2f\t%.2f\n",Event_Dat.Nrun,Event_Dat.exp_count,bec+1,qsm+1,pmt+1,dyn12,dyn9);
+									//getch();
+									dyn9 = Round(dyn9,2); // Округление до 2-го знака после запятой
+									dyn12 = Round(dyn12,2);
+									//Memo1->Lines->Add(IntToStr(Event_Dat.Nrun) + "\t" +IntToStr(Event_Dat.exp_count) + "\t" + IntToStr(bec+1) + "\t" + IntToStr(qsm+1) + "\t" + FloatToStr(dyn12) + "\t" + FloatToStr(dyn9));
+								}
+							}
+						}
+					}
+					if (n_pmt)
+					{
+						//events_60C << Event_Dat.Nrun <<"\t" << Event_Dat.exp_count <<"\t"<< n_lam <<"\t"<< n_pmt <<"\t"<< total_amp << "\n"; // Записываем данные в файл
+						//printf("N_lam:%ld\nN_pmt: %ld\nTotal amplitude: %.2f\n",n_lam,n_pmt,total_amp);
+					}
+					//printf("\n");
+
+					// Обработка события по СКТ
+					//TelescopicEvent(8,3);
+					for(int ibep=0; ibep < 2; ibep++)
+					{
+						if( (Event_Dat.MaskaBep&(1<<ibep)) ==0)
+						{
+							continue;
+						}
+						//printf("Triggered counters in %ld BEP: ",ibep);
+						float amp = 0.0;
+						for (int maa = 0; maa < 8; maa++) // i - это МАА
+						{
+							for (int j=0; j < 5; j++)   // j - это PMT
+							{
+								//if (Event_Dat.EventBep[ibep].acp[i][j]) // Если амплитуда ненулевая
+								if(((EventBep[ibep].maskahit[maa])&(1<<j))!=0)
+								{
+									double X,Y,Z;//точки пересечения трека с центром супермодуля (для внешнего использования)
+									short pl = Config_Dat.CfgBep[ibep].CfgKSM[maa].ipl[j]; // номер плоскости
+									short str = Config_Dat.CfgBep[ibep].CfgKSM[maa].istr[j]; // номер струны
+									X = Config_Dat.CfgBep[ibep].CfgKSM[maa].x[j]; // координаты(могут понадобиться в будущем)
+									Y = Config_Dat.CfgBep[ibep].CfgKSM[maa].y[j];
+									Z = Config_Dat.CfgBep[ibep].CfgKSM[maa].z[j];
+									amp = EventBep[ibep].acp[maa][j] - MonPds_SCT[ibep].sred[maa][j]; // вычитаем пьедестал
+									//printf("\n   amp:%.2f\t pl:%ld\t str:%ld\t X:%.1f\t Y:%.1f\t Z:%.1f\t",amp,pl,str,X,Y,Z);
+								}
+							}
+						}
+					}
+					//}
+					Nevent++; // увеличиваем номер события
+				break;
+				//Конец обработки события
+				deafult:
+					lseek(handle,header_rec.lendata,SEEK_CUR);
+				break;
+			}//tip_zap
+			read(handle,bstop,4);
+			if(memcmp(bstop,"stop",4))
+			{
+				//printf("%s Error read stop\n",ffile.ff_name);
+				break;
+			}
+		};
+		close(handle);
+	}while( (done=findnext(&ffile)) ==0);
+	findclose(&ffile);
+	//printf("All Event=%ld , Last Event:%ld\t Life time: %ld\n",Nevent,Event_Dat.exp_count,Event_Dat.All_time[1]);
+}
+
+
+//---------------------------------------------------------------------------
+void __fastcall TForm1::Button1Click(TObject *Sender)
+{
+	Memo1->Lines->Add("N_run\tN_event\tN_lam\tN_pmt\tSum_Amp"); // Тестирую для событий 60С
+	if (CheckBox1->Checked == true)  // Если стоит галочка "записывать в файл .nad"
+	{
+		if (!access(PathToDatFile->Text.c_str(),0))  // Если файл существуют
+		{
+			events60C.open(PathToDatFile->Text.c_str(),ios::app); // Открываем файл для дозаписи в конец файла
+		}
+		else   // Если файл не существует
+		{
+			events60C.open(PathToDatFile->Text.c_str(),ios::out); // Открываем файл для записи
+			events60C << "N_run\tN_event\tN_lam\tN_pmt\tTotal_amp\n";
+		}
+	}
+	ReadNad(EVENT60C);
+}
+
+void __fastcall TForm1::Button2Click(TObject *Sender)
+{
+	BarGraphSave.open("D:\\Mezinov\\BarGraph\\bargraph.txt",ios::out); // Открываем файл для записи
+	BarGraphSave << Graph1->Caption.c_str();  // Сохраняем название гистограммы
+	BarGraphSave << "\n";
+	BarGraphSave << Graph1->LabelX.c_str();
+	BarGraphSave << "\n";
+	BarGraphSave << Graph1->LabelY.c_str();
+	BarGraphSave << "\n";
+	BarGraphSave << Graph1->XminAll;
+	BarGraphSave << "\n";
+	BarGraphSave << Graph1->XmaxAll;
+	BarGraphSave << "\n";
+	for (int i = 0; i < 4096; i++)
+	{
+		BarGraphSave << DATA1[0][i];
+		BarGraphSave << "\n";
+	}
+	BarGraphSave.close();
+	Form1->Close();
+
+}
+
+void __fastcall TForm1::N3Click(TObject *Sender)
+{
+	//Открываем окно сохранения
+	Graph1->ColorBk=clWhite; // Изменяем цвет диаграммы. Так лучше для сохранения
+	SaveDialog1->Options.Clear();
+	SaveDialog1->Options<<ofOverwritePrompt<<ofHideReadOnly<<ofEnableSizing;
+	if(!SaveDialog1->Execute())return;
+	Graph1->SaveToFile(SaveDialog1->FileName.c_str(),true);
+	Graph1->ColorBk=clGreen;  // Устанавливаем первоначальный цвет диаграммы
+}
+
+
+
+void __fastcall TForm1::Button4Click(TObject *Sender)
+{
+	if (AutoScaleX->Checked == false)
+	{
+		Graph10->AvtoScaleX = false;
+		if (x_min->Text == "" || x_max->Text == "")
+		{
+			Application->MessageBoxA("Введите x_min и x_max","Ошибка",0);
+			return;
+		}
+		Graph10->XminAll = StrToInt(x_min->Text.c_str());
+		Graph10->XmaxAll = StrToInt(x_max->Text.c_str());
+	}
+	else
+	{
+	   Graph10->AvtoScaleX = true;
+	}
+
+	if (AutoScaleY->Checked == false)
+	{
+		Graph10->AvtoScaleY = false;
+		if (y_min->Text == "" || y_max->Text == "")
+		{
+			Application->MessageBoxA("Введите y_min и y_max","Ошибка",0);
+			return;
+		}
+		Graph10->YminAll = StrToInt(y_min->Text.c_str());
+		Graph10->YmaxAll = StrToInt(y_max->Text.c_str());
+	}
+	else
+	{
+	   Graph10->AvtoScaleY = true;
+	}
+}
+
+
+void __fastcall TForm1::Button3Click(TObject *Sender)
+{
+	for (int i = 0; i < 4096; i++)
+	{
+		DATA1[0][i] = 0;
+	}
+	Graph1->Repaint();
+	Memo1->Clear();
+	StatisticsMemo->Clear();
+	x_min->Clear();
+	x_max->Clear();
+	y_min->Clear();
+	y_max->Clear();
+}
+//---------------------------------------------------------------------------
+
+
+//---------------------------------------------------------------------------
+
+void __fastcall TForm1::Button5Click(TObject *Sender)
+{
+	if (Plane->Text == "" || Struna->Text == "")
+	{
+		Application->MessageBoxA("Введите номер плоскости и номер струны","Ошибка",0);
+		return;
+	}
+	if (ViewPmtResponse->Checked == true)
+	{
+		if (TelescopicBek->Text == "" || TelescopicQsm->Text == "" || TelescopicPmt->Text == "")
+		{
+			Application->MessageBoxA("Введите БЭК, КСМ и ФЭУ!","Ошибка",0);
+			return;
+		}
+	}
+	Memo2->Lines->Add("N_run\tN_event\tAmpSCT0\tAmpSCT1\t"); // Тестирую для событий 60С
+	ReadNad(TELESCOPIC);
+}
+//---------------------------------------------------------------------------
+
+
+void __fastcall TForm1::Button6Click(TObject *Sender)
+{
+	if (Bek->Text == "" || Qsm->Text == "" || Pmt->Text == "")
+	{
+		Application->MessageBoxA("Введите БЭК, КСМ и ФЭУ!","Ошибка",0);
+		return;
+	}
+	if ((StrToInt(Qsm->Text) > 4)   || (StrToInt(Pmt->Text) > 6))
+	{
+		Application->MessageBoxA("Проверьте корректность ввода КСМ и ФЭУ","Ошибка",0);
+		return;
+	}
+	ReadNad(PMT);
+}
+//---------------------------------------------------------------------------
+
+void __fastcall TForm1::N2Click(TObject *Sender)
+{
+	Form3->Show();
+}
+
+
+
+//---------------------------------------------------------------------------
+
+void __fastcall TForm1::Button8Click(TObject *Sender)
+{
+	if (AutoscaleXNoise->Checked == false)
+	{
+		Graph11->AvtoScaleX = false;
+		if (XMinNoise->Text == "" || XMaxNoise->Text == "")
+		{
+			Application->MessageBoxA("Введите x_min и x_max","Ошибка",0);
+			return;
+		}
+		Graph11->XminAll = StrToInt(XMinNoise->Text.c_str());
+		Graph11->XmaxAll = StrToInt(XMaxNoise->Text.c_str());
+	}
+	else
+	{
+	   Graph11->AvtoScaleX = true;
+	}
+
+	if (AutoscaleYNoise->Checked == false)
+	{
+		Graph11->AvtoScaleY = false;
+		if (YMinNoise->Text == "" || YMaxNoise->Text == "")
+		{
+			Application->MessageBoxA("Введите y_min и y_max","Ошибка",0);
+			return;
+		}
+		Graph11->YminAll = StrToInt(YMinNoise->Text.c_str());
+		Graph11->YmaxAll = StrToInt(YMaxNoise->Text.c_str());
+	}
+	else
+	{
+	   Graph11->AvtoScaleY = true;
+	}
+}
+//---------------------------------------------------------------------------
+
+void __fastcall TForm1::RadioButton1Click(TObject *Sender)
+{
+	Graph12->LabelX = "Шум триггерного сигнала А";
+	Graph12->SetBufY(DATA12A[0],NULL,0);
+}
+//---------------------------------------------------------------------------
+
+void __fastcall TForm1::RadioButton2Click(TObject *Sender)
+{
+	Graph12->LabelX = "Шум триггерного сигнала B";
+	Graph12->SetBufY(DATA12B[0],NULL,0);
+}
+//---------------------------------------------------------------------------
+
+void __fastcall TForm1::RadioButton3Click(TObject *Sender)
+{
+	Graph12->LabelX = "Шум триггерного сигнала C";
+	Graph12->SetBufY(DATA12C[0],NULL,0);
+}
+//---------------------------------------------------------------------------
+
+void __fastcall TForm1::ViewPmtResponseClick(TObject *Sender)
+{
+	TelescopicBek->Visible = true;
+	TelescopicQsm->Visible = true;
+	TelescopicPmt->Visible = true;
+	Label51->Visible = true;
+	Label52->Visible = true;
+	Label53->Visible = true;
+	GroupBox17->Visible = true;
+	Memo14->Visible = true;
+}
+//---------------------------------------------------------------------------
+
+
+
+
+void __fastcall TForm1::RadioButton4Click(TObject *Sender)
+{
+	GroupBox18->Caption = "Коэффициент сшивки";
+	Graph14->SetBufY(DATA14LK[0],NULL,0);
+	Graph14->YminAll = 1010;
+	Graph14->YmaxAll = 1050;
+}
+//---------------------------------------------------------------------------
+
+//---------------------------------------------------------------------------
+
+void __fastcall TForm1::RadioButton5Click(TObject *Sender)
+{
+	GroupBox18->Caption = "Амлитуда на 9-м диноде";
+	Graph14->SetBufY(DATA14Amp9[0],NULL,0);
+	Graph14->YminAll = 329;
+	Graph14->YmaxAll = 333;
+	Graph14->LabelY = "*0.1";
+}
+//---------------------------------------------------------------------------
+
+void __fastcall TForm1::RadioButton6Click(TObject *Sender)
+{
+	GroupBox18->Caption = "Пьедестал на 9-м диноде";
+	Graph14->SetBufY(DATA14Pds9[0],NULL,0);
+	Graph14->YminAll = 115;
+	Graph14->YmaxAll = 120;
+	Graph14->LabelY = "*0.1";
+}
+//---------------------------------------------------------------------------
+
+void __fastcall TForm1::RadioButton7Click(TObject *Sender)
+{
+	GroupBox18->Caption = "Амплитуда на 12-м диноде";
+	Graph14->SetBufY(DATA14Amp12[0],NULL,0);
+	Graph14->YminAll = 2200;
+	Graph14->YmaxAll = 2250;
+	Graph14->LabelY = "";
+}
+//---------------------------------------------------------------------------
+
+void __fastcall TForm1::RadioButton8Click(TObject *Sender)
+{
+	GroupBox18->Caption = "Пьедестал на 12-м диноде";
+	Graph14->SetBufY(DATA14Pds12[0],NULL,0);
+	Graph14->YminAll = 135;
+	Graph14->YmaxAll = 140;
+	Graph14->LabelY = "*0.1";
+}
+//---------------------------------------------------------------------------
+
+void __fastcall TForm1::RadioButton9Click(TObject *Sender)
+{
+	GroupBox18->Caption = "Шумы";
+	Graph14->SetBufY(DATA14Noise[0],NULL,0);
+	Graph14->YminAll = 10;
+	Graph14->YmaxAll = 2300;
+	Graph14->LabelY = "";
+}
+//---------------------------------------------------------------------------
+
+void __fastcall TForm1::RadioButton10Click(TObject *Sender)
+{
+	GroupBox18->Caption = "Шум триггерного сигнала А";
+	Graph14->SetBufY(DATA14NoiseA[0],NULL,0);
+	Graph14->YminAll = 3200;
+	Graph14->YmaxAll = 4150;
+	Graph14->LabelY = "";
+}
+//---------------------------------------------------------------------------
+
+void __fastcall TForm1::RadioButton11Click(TObject *Sender)
+{
+	GroupBox18->Caption = "Шум триггерного сигнала B";
+	Graph14->SetBufY(DATA14NoiseB[0],NULL,0);
+	Graph14->YminAll = 0;
+	Graph14->YmaxAll = 420;
+	Graph14->LabelY = "";
+}
+//---------------------------------------------------------------------------
+
+void __fastcall TForm1::RadioButton12Click(TObject *Sender)
+{
+	GroupBox18->Caption = "Шум триггерного сигнала C";
+	Graph14->SetBufY(DATA14NoiseC[0],NULL,0);
+	Graph14->YminAll = 530;
+	Graph14->YmaxAll = 700;
+	Graph14->LabelY = "";
+}
+//---------------------------------------------------------------------------
+
+void __fastcall TForm1::Button9Click(TObject *Sender)
+{
+	if (AutoscaleXGraph->Checked == false)
+	{
+		Graph14->AvtoScaleX = false;
+		if (XMinGraph->Text == "" || XMaxGraph->Text == "")
+		{
+			Application->MessageBoxA("Введите x_min и x_max","Ошибка",0);
+			return;
+		}
+		Graph14->XminAll = StrToInt(XMinGraph->Text.c_str());
+		Graph14->XmaxAll = StrToInt(XMaxGraph->Text.c_str());
+	}
+	else
+	{
+	   Graph14->AvtoScaleX = true;
+	}
+
+	if (AutoscaleYGraph->Checked == false)
+	{
+		Graph14->AvtoScaleY = false;
+		if (YMinGraph->Text == "" || YMaxGraph->Text == "")
+		{
+			Application->MessageBoxA("Введите y_min и y_max","Ошибка",0);
+			return;
+		}
+		Graph14->YminAll = StrToInt(YMinGraph->Text.c_str());
+		Graph14->YmaxAll = StrToInt(YMaxGraph->Text.c_str());
+	}
+	else
+	{
+	   Graph14->AvtoScaleY = true;
+	}
+}
+

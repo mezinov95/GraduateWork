@@ -1,0 +1,214 @@
+//---------------------------------------------------------------------------
+
+#ifndef Unit2H
+#define Unit2H
+//---------------------------------------------------------------------------
+#include <Classes.hpp>
+#include <Controls.hpp>
+#include <StdCtrls.hpp>
+#include <Forms.hpp>
+#include <Menus.hpp>
+#include <Dialogs.hpp>
+#include <ComCtrls.hpp>
+//---------------------------------------------------------------------------
+class TForm1 : public TForm
+{
+__published:	// IDE-managed Components
+	TMainMenu *MainMenu1;
+	TMenuItem *N1;
+	TMenuItem *N3;
+	TSaveDialog *SaveDialog1;
+	TMenuItem *N2;
+	TLabel *Label21;
+	TLabel *Label22;
+	TLabel *Label23;
+	TLabel *Label24;
+	TLabel *Label25;
+	TLabel *Label26;
+	TLabel *Label27;
+	TLabel *Label28;
+	TCheckBox *CheckBox11;
+	TCheckBox *CheckBox12;
+	TCheckBox *CheckBox13;
+	TCheckBox *CheckBox14;
+	TCheckBox *CheckBox15;
+	TCheckBox *CheckBox16;
+	TCheckBox *CheckBox17;
+	TLabel *Label29;
+	TLabel *Label30;
+	TLabel *Label31;
+	TLabel *Label32;
+	TLabel *Label33;
+	TLabel *Label34;
+	TLabel *Label35;
+	TLabel *Label36;
+	TPageControl *PageControl1;
+	TTabSheet *TabSheet1;
+	TLabel *Label1;
+	TLabel *Label2;
+	TMemo *Memo1;
+	TButton *Button1;
+	TEdit *PathToRun;
+	TGroupBox *GroupBox1;
+	TButton *Button2;
+	TCheckBox *CheckBox1;
+	TEdit *PathToDatFile;
+	TGroupBox *GroupBox2;
+	TLabel *Label3;
+	TLabel *Label4;
+	TLabel *Label5;
+	TLabel *Label6;
+	TEdit *x_min;
+	TEdit *x_max;
+	TEdit *y_min;
+	TEdit *y_max;
+	TButton *Button4;
+	TCheckBox *AutoScaleX;
+	TCheckBox *AutoScaleY;
+	TMemo *StatisticsMemo;
+	TButton *Button3;
+	TGroupBox *GroupBox3;
+	TTabSheet *TabSheet2;
+	TLabel *Label8;
+	TLabel *Label9;
+	TMemo *Memo2;
+	TEdit *Plane;
+	TEdit *Struna;
+	TButton *Button5;
+	TGroupBox *GroupBox4;
+	TGroupBox *GroupBox5;
+	TTabSheet *TabSheet3;
+	TButton *Button6;
+	TTabSheet *TabSheet4;
+	TGroupBox *GroupBox6;
+	TLabel *Label11;
+	TLabel *Label12;
+	TLabel *Label13;
+	TLabel *Label14;
+	TLabel *Label15;
+	TLabel *Label16;
+	TLabel *Label17;
+	TLabel *Label18;
+	TLabel *Label19;
+	TLabel *Label20;
+	TLabel *Label37;
+	TLabel *Label38;
+	TLabel *Label39;
+	TLabel *Label40;
+	TLabel *Label41;
+	TLabel *Label42;
+	TLabel *Label43;
+	TLabel *Label44;
+	TCheckBox *CheckBox2;
+	TCheckBox *CheckBox3;
+	TCheckBox *CheckBox4;
+	TCheckBox *CheckBox5;
+	TCheckBox *CheckBox6;
+	TCheckBox *CheckBox7;
+	TCheckBox *CheckBox8;
+	TCheckBox *CheckBox9;
+	TCheckBox *CheckBox10;
+	TCheckBox *CheckBox18;
+	TCheckBox *CheckBox19;
+	TCheckBox *CheckBox20;
+	TCheckBox *CheckBox21;
+	TCheckBox *CheckBox22;
+	TCheckBox *CheckBox23;
+	TCheckBox *CheckBox24;
+	TCheckBox *CheckBox25;
+	TLabel *Label45;
+	TMemo *Memo4;
+	TButton *Button7;
+	TGroupBox *GroupBox7;
+	TLabel *Label10;
+	TEdit *Bek;
+	TLabel *Label46;
+	TEdit *Qsm;
+	TLabel *Label47;
+	TEdit *Pmt;
+	TGroupBox *GroupBox8;
+	TGroupBox *GroupBox9;
+	TGroupBox *GroupBox10;
+	TGroupBox *GroupBox11;
+	TMemo *Memo3;
+	TMemo *Memo6;
+	TMemo *Memo7;
+	TMemo *Memo8;
+	TMemo *Memo5;
+	TMemo *Memo9;
+	TMemo *Memo10;
+	TMemo *Memo11;
+	TGroupBox *GroupBox12;
+	TGroupBox *GroupBox13;
+	TGroupBox *GroupBox14;
+	TButton *Button8;
+	TLabel *Label7;
+	TLabel *Label48;
+	TLabel *Label49;
+	TLabel *Label50;
+	TMemo *Memo12;
+	TEdit *XMinNoise;
+	TEdit *XMaxNoise;
+	TEdit *YMinNoise;
+	TEdit *YMaxNoise;
+	TCheckBox *AutoscaleXNoise;
+	TCheckBox *AutoscaleYNoise;
+	TGroupBox *GroupBox15;
+	TMemo *Memo13;
+	TGroupBox *GroupBox16;
+	TRadioButton *RadioButton2;
+	TRadioButton *RadioButton3;
+	TRadioButton *RadioButton1;
+	TGroupBox *GroupBox17;
+	TCheckBox *ViewPmtResponse;
+	TEdit *TelescopicBek;
+	TEdit *TelescopicQsm;
+	TEdit *TelescopicPmt;
+	TLabel *Label51;
+	TLabel *Label52;
+	TLabel *Label53;
+	TMemo *Memo14;
+	TMemo *Memo15;
+	TTabSheet *TabSheet5;
+	TGroupBox *GroupBox18;
+	TGroupBox *GroupBox19;
+	TRadioButton *RadioButton4;
+	TRadioButton *RadioButton5;
+	TRadioButton *RadioButton6;
+	TRadioButton *RadioButton7;
+	TRadioButton *RadioButton8;
+	TRadioButton *RadioButton9;
+	TRadioButton *RadioButton10;
+	TRadioButton *RadioButton11;
+	TRadioButton *RadioButton12;
+	TGroupBox *GroupBox20;
+	void __fastcall Button1Click(TObject *Sender);
+	void __fastcall Button2Click(TObject *Sender);
+	void __fastcall N3Click(TObject *Sender);
+	void __fastcall Button4Click(TObject *Sender);
+	void __fastcall Button3Click(TObject *Sender);
+	void __fastcall Button5Click(TObject *Sender);
+	void __fastcall Button6Click(TObject *Sender);
+	void __fastcall N2Click(TObject *Sender);
+	void __fastcall Button8Click(TObject *Sender);
+	void __fastcall RadioButton1Click(TObject *Sender);
+	void __fastcall RadioButton2Click(TObject *Sender);
+	void __fastcall RadioButton3Click(TObject *Sender);
+	void __fastcall ViewPmtResponseClick(TObject *Sender);
+	void __fastcall RadioButton5Click(TObject *Sender);
+	void __fastcall RadioButton4Click(TObject *Sender);
+	void __fastcall RadioButton6Click(TObject *Sender);
+	void __fastcall RadioButton7Click(TObject *Sender);
+	void __fastcall RadioButton8Click(TObject *Sender);
+	void __fastcall RadioButton9Click(TObject *Sender);
+	void __fastcall RadioButton10Click(TObject *Sender);
+	void __fastcall RadioButton11Click(TObject *Sender);
+	void __fastcall RadioButton12Click(TObject *Sender);
+private:	// User declarations
+public:		// User declarations
+	__fastcall TForm1(TComponent* Owner);
+};
+//---------------------------------------------------------------------------
+extern PACKAGE TForm1 *Form1;
+//---------------------------------------------------------------------------
+#endif
